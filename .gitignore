@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+api/venv/
+api/__pycache__/
+worker/venv/
+worker/__pycache__/
+.DS_Store
