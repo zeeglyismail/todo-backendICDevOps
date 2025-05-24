@@ -5,12 +5,12 @@ import boto3
 import redis
 from datetime import datetime
 from dotenv import load_dotenv
+import sys
 
 from config import (
-    QUEUE_URL, DATABASE_URL, REDIS_HOST, REDIS_PORT,
-    SQS_ENDPOINT, SQS_REGION, SQS_ACCESS_KEY, SQS_SECRET_KEY
+    QUEUE_URL, DATABASE_URL, REDIS_HOST, REDIS_PORT,SQS_REGION
 )
-from models import Todo, TodoNotification, Base
+from models import Todo, Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import logging
@@ -26,18 +26,37 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Initialize Redis client
+logger.info(f"Initializing Redis client with host: {REDIS_HOST}, port: {REDIS_PORT}")
+
 redis_client = redis.Redis(
     host=REDIS_HOST,
-    port=REDIS_PORT
+    port=REDIS_PORT,
+    password=os.getenv('REDIS_PASSWORD'),
+    ssl=False,  # Disable SSL
 )
 
-sqs = boto3.client(
-    'sqs',
-    endpoint_url=SQS_ENDPOINT,
-    region_name=SQS_REGION,
-    aws_access_key_id=SQS_ACCESS_KEY,
-    aws_secret_access_key=SQS_SECRET_KEY
-)
+# Test Redis connection
+try:
+    redis_client.ping()
+    logger.info("Successfully connected to Redis")
+except Exception as e:
+    logger.error(f"Failed to connect to Redis: {str(e)}")
+    raise
+
+# Initialize SQS client
+sqs_config = {
+    'region_name': SQS_REGION,
+}
+
+# Only add endpoint URL and credentials for local development
+if 'elasticmq' in QUEUE_URL:
+    sqs_config.update({
+        'endpoint_url': QUEUE_URL,
+        'aws_access_key_id': os.getenv('SQS_ACCESS_KEY'),
+        'aws_secret_access_key': os.getenv('SQS_SECRET_KEY')
+    })
+
+sqs = boto3.client('sqs', **sqs_config)
 
 def get_db_session():
     engine = create_engine(DATABASE_URL)
@@ -112,9 +131,20 @@ def process_notification(message):
     try:
         logger.info('Processing notification: %s', message)
         data = json.loads(message['Body'])
+        logger.info('Parsed message body: %s', data)
+
         todo_id = data.get('todoId') or data.get('todo_id')
         action = data.get('type') or data.get('action')
-        todo_data = data.get('data') or data.get('todo_data', {})
+
+        # Extract todo data from the message, excluding metadata fields
+        todo_data = {
+            'title': data.get('title'),
+            'description': data.get('description'),
+            'status': data.get('status', 'pending'),
+            'priority': data.get('priority', 'medium'),
+            'due_date': data.get('due_date')
+        }
+        logger.info('Extracted todo_data: %s', todo_data)
 
         logger.info('Notification details - ID: %s, Action: %s, Data: %s',
                    todo_id, action, todo_data)
@@ -128,6 +158,14 @@ def process_notification(message):
                 if existing_todo:
                     logger.info('Todo with ID %s already exists, skipping creation', todo_id)
                     return True  # Return True to indicate successful processing
+
+                # Ensure required fields are present
+                if not todo_data.get('title'):
+                    logger.error('Title is required for todo creation. Available fields: %s', list(todo_data.keys()))
+                    return False
+
+                # Log the todo data before creation
+                logger.info('Creating todo with data: %s', todo_data)
 
                 todo = Todo(**todo_data)
                 db.add(todo)
@@ -182,7 +220,7 @@ def main():
                 QueueUrl=QUEUE_URL,
                 MaxNumberOfMessages=1,
                 WaitTimeSeconds=20,
-                VisibilityTimeout=30  # Match the queue's visibility timeout
+                VisibilityTimeout=60  # Increased from 30 to 60 seconds
             )
             logger.info("SQS response: %s", response)
 
@@ -209,4 +247,10 @@ def main():
             time.sleep(5)  # Wait before retrying
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Worker stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)

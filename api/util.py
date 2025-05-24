@@ -19,22 +19,38 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Initialize Redis client
+redis_host = os.getenv('REDIS_HOST')
+redis_port = int(os.getenv('REDIS_PORT'))
+redis_password = os.getenv('REDIS_PASSWORD')
+
+logger.info(f"Initializing Redis client with host: {redis_host}, port: {redis_port}")
+
 redis_client = redis.Redis(
-    host=os.getenv('REDIS_HOST', 'redis'),
-    port=int(os.getenv('REDIS_PORT', 6379))
+    host=redis_host,
+    port=redis_port,
+    password=redis_password,
+    ssl=False,  # Disable SSL
 )
+
+# Test Redis connection
+try:
+    redis_client.ping()
+    logger.info("Successfully connected to Redis")
+except Exception as e:
+    logger.error(f"Failed to connect to Redis: {str(e)}")
+    raise
 
 # Initialize SQS client
 sqs_config = {
-    'region_name': os.getenv('SQS_REGION', 'elasticmq'),
-    'endpoint_url': os.getenv('SQS_ENDPOINT', 'http://elasticmq:9324')
+    'region_name': os.getenv('SQS_REGION'),
+    'endpoint_url': os.getenv('SQS_QUEUE_URL')
 }
 
 # Only add AWS credentials for local development
 if 'elasticmq' in sqs_config['endpoint_url']:
     sqs_config.update({
-        'aws_access_key_id': os.getenv('SQS_ACCESS_KEY', 'x'),
-        'aws_secret_access_key': os.getenv('SQS_SECRET_KEY', 'x')
+        'aws_access_key_id': os.getenv('SQS_ACCESS_KEY'),
+        'aws_secret_access_key': os.getenv('SQS_SECRET_KEY')
     })
 
 sqs = boto3.client('sqs', **sqs_config)
@@ -148,7 +164,7 @@ def check_elasticmq():
         logger.error(f"ElasticMQ health check failed: {str(e)}")
         return {'status': 'unhealthy', 'error': str(e)}
 
-def send_notification(todo_id, action):
+def send_notification(todo_id, action, todo_data=None):
     """Send a notification to SQS queue"""
     try:
         message = {
@@ -157,23 +173,36 @@ def send_notification(todo_id, action):
             'timestamp': datetime.utcnow().isoformat()
         }
 
+        if todo_data:
+            # Ensure todo_data is a dictionary
+            if not isinstance(todo_data, dict):
+                logger.error(f"todo_data must be a dictionary, got {type(todo_data)}")
+                return None
+
+            # Log the todo_data before adding it to the message
+            logger.info(f"Adding todo_data to message: {todo_data}")
+            message.update(todo_data)
+
+        # Log the final message before sending
+        logger.info(f"Sending message to SQS: {message}")
+
         response = sqs.send_message(
             QueueUrl=QUEUE_URL,
             MessageBody=json.dumps(message)
         )
-        print(f"Notification sent: {message}")
+        logger.info(f"Notification sent successfully: {message}")
         return response
     except Exception as e:
-        print(f"Error sending notification: {e}")
+        logger.error(f"Error sending notification: {e}")
         return None
 
 def update_cache(todo_id, todo_data):
     """Update Redis cache with todo data"""
     try:
         redis_client.set(f"todo:{todo_id}", json.dumps(todo_data))
-        print(f"Cache updated for todo {todo_id}")
+        logger.info(f"Cache updated for todo {todo_id}")
     except Exception as e:
-        print(f"Error updating cache: {e}")
+        logger.error(f"Error updating cache: {e}")
 
 def get_from_cache(todo_id):
     """Get todo data from Redis cache"""
@@ -181,13 +210,13 @@ def get_from_cache(todo_id):
         data = redis_client.get(f"todo:{todo_id}")
         return json.loads(data) if data else None
     except Exception as e:
-        print(f"Error getting from cache: {e}")
+        logger.error(f"Error getting from cache: {e}")
         return None
 
 def delete_from_cache(todo_id):
     """Delete todo data from Redis cache"""
     try:
         redis_client.delete(f"todo:{todo_id}")
-        print(f"Cache deleted for todo {todo_id}")
+        logger.info(f"Cache deleted for todo {todo_id}")
     except Exception as e:
-        print(f"Error deleting from cache: {e}")
+        logger.error(f"Error deleting from cache: {e}")

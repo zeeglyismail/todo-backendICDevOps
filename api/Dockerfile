@@ -1,7 +1,7 @@
 # Build stage
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
-# Set environment variables
+# Set build-time environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Final stage
 FROM python:3.11-slim
 
-# Set environment variables
+# Set runtime environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
@@ -55,4 +55,6 @@ USER appuser
 
 # Expose port
 EXPOSE 3001
+
+# Command to run the application
 CMD ["gunicorn", "--bind", "0.0.0.0:3001", "--reload", "--workers", "1", "app:app"]

@@ -47,6 +47,12 @@ def log_response_info(response):
                 response.get_data(as_text=True))
     return response
 
+@app.route('/_health', methods=['GET'])
+def health():
+    return jsonify({
+        'status': 'ok',
+    }), 200
+
 @app.route('/health', methods=['GET'])
 def health_check():
     postgres_status = check_postgres()
