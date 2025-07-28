@@ -46,8 +46,8 @@ def ensure_sqs_queue():
     if 'elasticmq' in QUEUE_URL:
         sqs_config.update({
             'endpoint_url': QUEUE_URL,
-            'aws_access_key_id': SQS_ACCESS_KEY,
-            'aws_secret_access_key': SQS_SECRET_KEY
+            'aws_access_key_id': '1234',
+            'aws_secret_access_key': '1234'
         })
 
     sqs = boto3.client('sqs', **sqs_config)
