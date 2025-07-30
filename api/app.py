@@ -12,10 +12,8 @@ from util import (
 )
 from models import get_db, Todo
 
-# Initialize services before creating the Flask app
 initialize_services()
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
