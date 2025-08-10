@@ -48,3 +48,67 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Assume AWS IAM Role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-southeast-1
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
+          role-session-name: deployment
+      - name: Get EC2 instance IP
+        id: get-instance-ip
+        run: |
+          INSTANCE_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:service,Values=backend" "Name=tag:env,Values=dev" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text)
+
+          if [ "$INSTANCE_IP" = "None" ] || [ -z "$INSTANCE_IP" ]; then
+            echo "No running EC2 instance found with tags service=backend and env=dev"
+            exit 1
+          fi
+
+          echo "instance-ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
+          echo "Found EC2 instance IP: $INSTANCE_IP"
+
+      - name: Deploy to EC2
+        run: |
+          # Create SSH key file
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
+          # Get the image tag from the build job
+          IMAGE_TAG="${{ github.sha }}"
+          IMAGE_NAME="${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_NAME }}:$IMAGE_TAG"
+
+          # Test SSH connection first
+          ssh -i private_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@${{ steps.get-instance-ip.outputs.instance-ip }} "echo 'SSH connection successful'"
+
+          # SSH into EC2 and deploy
+          ssh -i private_key.pem -o StrictHostKeyChecking=no -T ubuntu@${{ steps.get-instance-ip.outputs.instance-ip }} << 'EOF'
+            # Login to Docker Hub
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ env.DOCKERHUB_USERNAME }}" --password-stdin
+
+            # Pull the latest image
+            docker pull ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_NAME }}:${{ github.sha }}
+
+            # Stop and remove existing container if it exists
+            docker stop todo-api || true
+            docker rm todo-api || true
+
+            # Run the new container
+            docker run -d --name todo-api -p 80:5000 ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_NAME }}:${{ github.sha }}
+
+            # Clean up old images to save space
+            docker image prune -f
+          EOF
+
+          # Clean up SSH key
+          rm private_key.pem
