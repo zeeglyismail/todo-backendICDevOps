@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      image: ${DOCKERHUB_USERNAME}/ic-devops-todo-api:${IMAGE_TAG}
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env.local
+    volumes:
+      - ./api:/app
+      - ./elasticmq.conf:/opt/elasticmq.conf
+    networks:
+      - todo-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      elasticmq:
+        condition: service_started
+  worker:
+    build:
+      image: ${DOCKERHUB_USERNAME}/ic-devops-todo-worker:${IMAGE_TAG}
+    env_file:
+      - .env.local
+    volumes:
+      - ./worker:/app
+      - ./elasticmq.conf:/opt/elasticmq.conf
+    networks:
+      - todo-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticmq:
+        condition: service_started
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      - POSTGRES_DB=todo_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./api/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - todo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d todo_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - todo-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  elasticmq:
+    image: softwaremill/elasticmq-native:latest
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf
+    command: ["-Dconfig.file=/opt/elasticmq.conf"]
+    networks:
+      - todo-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9324/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  todo-network:
