@@ -10,6 +10,7 @@ on:
 env:
   DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
   DOCKERHUB_REPOSITORY_NAME: ic-devops-todo-api
+  DOCKERHUB_REPOSITORY_NAME2: ic-devops-todo-worker
   REGISTRY: docker.io
 
 jobs:
@@ -31,12 +32,22 @@ jobs:
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Docker meta
-        id: meta
+      
+      - name: Docker meta for api
+        id: api
         uses: docker/metadata-action@v5
         with:
           images: |
             ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_NAME }}
+          tags: |
+            type=sha,prefix=,suffix=
+      
+      - name: Docker meta for worker
+        id: worker
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_NAME2 }}
           tags: |
             type=sha,prefix=,suffix=
 
@@ -45,7 +56,7 @@ jobs:
         with:
           context: ./api
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.api.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
@@ -55,11 +66,10 @@ jobs:
         with:
           context: ./worker
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.worker.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64    
-
   deploy:
     needs: build
     runs-on: ubuntu-latest
