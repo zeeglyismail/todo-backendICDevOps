@@ -119,7 +119,7 @@ jobs:
           # Go to app directory (where repo + compose.yml is cloned)
           cd ~/todo-backendICDevOps
           git fetch origin
-          git reset --hard origin/main 
+          git reset --hard origin/master
           
           #Login to Docker Hub
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ env.DOCKERHUB_USERNAME }}" --password-stdin
