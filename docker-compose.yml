@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   api:
-    image: ${DOCKERHUB_USERNAME}/ic-devops-todo-api:${IMAGE_TAG}
+    image: zeeglyismail/ic-devops-todo-api:${IMAGE_TAG}
     ports:
       - "3001:3001"
     env_file:
@@ -20,7 +18,7 @@ services:
       elasticmq:
         condition: service_started
   worker:
-    image: ${DOCKERHUB_USERNAME}/ic-devops-todo-worker:${IMAGE_TAG}
+    image: zeeglyismail/ic-devops-todo-worker:${IMAGE_TAG}
     env_file:
       - .env.local
     volumes:

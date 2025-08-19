@@ -83,22 +83,6 @@ jobs:
           aws-region: us-east-1
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      - name: Get EC2 instance IP
-        id: get-instance-ip
-        run: |
-          INSTANCE_IP=$(aws ec2 describe-instances \
-            --filters "Name=tag:service,Values=backendismail" "Name=tag:env,Values=devismail" "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].PublicIpAddress" \
-            --output text)
-
-          if [ "$INSTANCE_IP" = "None" ] || [ -z "$INSTANCE_IP" ]; then
-            echo "No running EC2 instance found with tags service=backendismail and env=devismail"
-            exit 1
-          fi
-
-          echo "instance-ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
-          echo "Found EC2 instance IP: $INSTANCE_IP"
-
       - name: Deploy to EC2
         run: |
           # Create SSH key file
@@ -107,13 +91,12 @@ jobs:
 
           # Get the image tag from the build job
           IMAGE_TAG="${{ github.sha }}"
-          IMAGE_NAME="${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_NAME }}:$IMAGE_TAG"
-
+          INSTANCE_IP="${{ secrets.INSTANCE_IP }}"
           # Test SSH connection first
-          ssh -i private_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@${{ steps.get-instance-ip.outputs.instance-ip }} "echo 'SSH connection successful'"
+          ssh -i private_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@$INSTANCE_IP "echo 'SSH connection successful'"
 
           # SSH into EC2 and deploy
-          ssh -i private_key.pem -o StrictHostKeyChecking=no -T ubuntu@${{ steps.get-instance-ip.outputs.instance-ip }} << 'EOF'
+          ssh -i private_key.pem -o StrictHostKeyChecking=no -T ubuntu@$INSTANCE_IP << EOF
           
           
           # Go to app directory (where repo + compose.yml is cloned)
@@ -123,8 +106,8 @@ jobs:
           
           #Login to Docker Hub
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ env.DOCKERHUB_USERNAME }}" --password-stdin
-          IMAGE_TAG=${{ github.sha }} DOCKERHUB_USERNAME=${{ env.DOCKERHUB_USERNAME }} docker compose pull api worker
-          IMAGE_TAG=${{ github.sha }} DOCKERHUB_USERNAME=${{ env.DOCKERHUB_USERNAME }} docker compose up -d api worker
+          IMAGE_TAG=${{ github.sha }} docker compose pull 
+          IMAGE_TAG=${{ github.sha }} docker compose up -d
           
           # Clean up old images to save space
           docker image prune -f
