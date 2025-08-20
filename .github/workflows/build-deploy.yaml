@@ -97,13 +97,13 @@ jobs:
 
           # SSH into EC2 and deploy
           ssh -i private_key.pem -o StrictHostKeyChecking=no -T ubuntu@$INSTANCE_IP << EOF
-          
+          ls -al
           
           # Go to app directory (where repo + compose.yml is cloned)
           cd ~/todo-backendICDevOps
           git fetch origin
           git reset --hard origin/master
-          
+          ls -al
           #Login to Docker Hub
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ env.DOCKERHUB_USERNAME }}" --password-stdin
           export IMAGE_TAG=$IMAGE_TAG
