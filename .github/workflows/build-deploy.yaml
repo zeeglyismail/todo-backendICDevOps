@@ -90,7 +90,7 @@ jobs:
           chmod 600 private_key.pem
 
           # Get the image tag from the build job
-          IMAGE_TAG="${{ github.sha }}"
+          IMAGE_TAG="$(echo $GITHUB_SHA | cut -c1-7)"
           INSTANCE_IP="${{ secrets.INSTANCE_IP }}"
           # Test SSH connection first
           ssh -i private_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@$INSTANCE_IP "echo 'SSH connection successful'"
@@ -106,8 +106,9 @@ jobs:
           
           #Login to Docker Hub
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ env.DOCKERHUB_USERNAME }}" --password-stdin
-          IMAGE_TAG=${{ github.sha }} docker compose pull 
-          IMAGE_TAG=${{ github.sha }} docker compose up -d
+          export IMAGE_TAG=$IMAGE_TAG
+          docker compose pull 
+          docker compose up -d
           
           # Clean up old images to save space
           docker image prune -f
