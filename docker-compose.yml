@@ -4,7 +4,7 @@ services:
     ports:
       - "3001:3001"
     env_file:
-      - .env.local
+      - .env
     volumes:
       - ./api:/app
       - ./elasticmq.conf:/opt/elasticmq.conf
@@ -20,7 +20,7 @@ services:
   worker:
     image: zeeglyismail/ic-devops-todo-worker:${IMAGE_TAG}
     env_file:
-      - .env.local
+      - .env
     volumes:
       - ./worker:/app
       - ./elasticmq.conf:/opt/elasticmq.conf
